@@ -1,14 +1,19 @@
-// 서보모터 2개 연결시 업데이트
-
 #include <Servo.h>
+
+const int servoLeftDefault=180;
+const int servoRightDefault=0;
+const int servoLeftMax=90;
+const int servoRightMax=120;
+
 
 Servo servoLeft;
 Servo servoRight;
 int input;
 
+
 void setup() {
   servoLeft.attach(9);   // 왼쪽 서보모터 핀
-  servoRight.attach(10); // 오른쪽 서보모터 핀
+  servoRight.attach(11); // 오른쪽 서보모터 핀
   Serial.begin(9600);
 }
 
@@ -16,49 +21,56 @@ void setup() {
 
 // 고개 기본 위치
 void setDefaultPosition() {
-  servoLeft.write(0);
-  servoRight.write(0);
+  servoLeft.write(servoLeftDefault);
+  servoRight.write(servoRightDefault);
 }
 
 // 고개 숙임 (90도)
 void nodDown90() {
-  servoLeft.write(90);
-  servoRight.write(90);
+  servoLeft.write((servoLeftDefault+servoLeftMax)/2);
+  servoRight.write((servoRightDefault+servoRightMax)/2);
 }
+
 
 // 고개 숙임 (180도 수준)
 void nodDown180() {
-  servoLeft.write(180);
-  servoRight.write(180);
+  servoLeft.write(servoLeftMax);
+  servoRight.write(servoRightMax);
 }
 
 // 교정 알림: 흔들기 동작
 void shakeHead() {
   for (int i = 0; i < 3; i++) {
-    servoLeft.write(160);
-    servoRight.write(20);
-    delay(300);
-    servoLeft.write(120);
-    servoRight.write(60);
-    delay(300);
+    servoLeft.write(servoLeftDefault);
+    servoRight.write(servoRightMax);
+    delay(500);
+    servoLeft.write(servoLeftMax);
+    servoRight.write(servoRightDefault);
+    delay(500);
   }
+  nodDown180();
+  delay(10000);
 }
 
 // 교정 완수 보상: 끄덕끄덕
 void nodYes() {
   for (int i = 0; i < 3; i++) {
-    servoLeft.write(45);
-    servoRight.write(45);
-    delay(400);
-    servoLeft.write(135);
-    servoRight.write(135);
-    delay(400);
+    servoLeft.write((servoLeftDefault+servoLeftMax)/2);
+    servoRight.write((servoRightDefault+servoRightMax)/2);
+    delay(300);
+    servoLeft.write(servoLeftDefault);
+    servoRight.write(servoRightDefault);
+    delay(300);
   }
+  setDefaultPosition();
+  delay(10000);
 }
 
 void loop() {
+
   if (Serial.available()) {
     input = Serial.read();
+  
 
     switch (input) {
       case '0':
@@ -66,24 +78,21 @@ void loop() {
         break;
 
       case '1':
-        nodDown90();           // 고개 살짝 숙임
-        delay(5000);           // 5초 대기
+        nodDown90();          // 고개 살짝 숙임, 대기
         break;
 
       case '2':
         nodDown180();          // 고개 많이 숙임
-        shakeHead();           // 교정 알림
         break;
 
       case '3':
-        // 자세 교정 세션 시작 (미구현)
-
+        setDefaultPosition();
+        delay(100);
+        nodYes();
         break;
 
       case '4':
-        nodDown180();          // 고개 많이 숙임
         shakeHead();           // 교정 알림
-        delay(500);           // 5초 대기
         break;
 
       case '5':
@@ -96,7 +105,10 @@ void loop() {
 
       default:
         break;
+
     }
+    
+  
   }
 }
 
