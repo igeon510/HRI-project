@@ -85,7 +85,7 @@ def calculate_score_from_landmarks(baseline, current):
     """
     
     # 기준값 정의
-    distance_thresh = 100  # 픽셀 기준 거리 변화 허용치
+    distance_thresh = 120  # 픽셀 기준 거리 변화 허용치
     
     # 값 추출
     baseline_mouth_y = baseline['mouth_y']

@@ -15,6 +15,7 @@ import os
 
 import serial.tools.list_ports
 
+# 자동으로 아두이노 포트 찾기
 def init_arduino(baudrate=9600):
     ports = serial.tools.list_ports.comports()
     for p in ports:
@@ -27,10 +28,10 @@ def init_arduino(baudrate=9600):
 def init_mediapipe():
     mp_pose = mp.solutions.pose
     return mp_pose.Pose(
-        static_image_mode=False,
-        model_complexity=0,
-        min_detection_confidence=0.5,
-        min_tracking_confidence=0.5
+        static_image_mode=False, # 이전 프레임 기반 추적
+        model_complexity=0, # 경량
+        min_detection_confidence=0.5, # 최초 감지 신뢰도
+        min_tracking_confidence=0.5 # 추적 신뢰도
     )
     
 def init_camera():
@@ -46,6 +47,8 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 # ====================== 기능 함수 ======================
 
+
+# 랜드마크 좌표 가져오기 및 처리
 def get_landmark_positions(pose_landmarks, image_width, image_height):
     # 어깨 중앙점 계산
     left_shoulder = pose_landmarks.landmark[mp.solutions.pose.PoseLandmark.LEFT_SHOULDER]
@@ -70,6 +73,7 @@ def get_landmark_positions(pose_landmarks, image_width, image_height):
         'shoulder_mid_y': int(shoulder_mid_y * image_height)
     }
 
+# baseline 그리고 최초 정자세 맞추도록 유도
 def draw_baseline_guidance(image, font):
     cv2.putText(image, "Please straighten your back and shoulders according to the reference posture and look at the screen. Press 'S' in keyboard.", (20, 60), font, 0.8, (0, 0, 255), 2)
     center_x, center_y = image.shape[1] // 2 + 50, image.shape[0] // 2
@@ -77,6 +81,7 @@ def draw_baseline_guidance(image, font):
     cv2.ellipse(image, (center_x, center_y), axes_length, 0, 0, 360, (0, 255, 255), 2)
 
 
+# 랜드마크 기준 최초와 비교하여 점수 계산
 def calculate_score_from_landmarks(baseline, current):
     """
     입과 어깨 중앙점의 상대적 위치 변화로 거북목 점수를 계산.
@@ -85,7 +90,7 @@ def calculate_score_from_landmarks(baseline, current):
     """
     
     # 기준값 정의
-    distance_thresh = 100  # 픽셀 기준 거리 변화 허용치
+    distance_thresh = 120  # 픽셀 기준 거리 변화 허용치
     
     # 값 추출
     baseline_mouth_y = baseline['mouth_y']
@@ -106,7 +111,7 @@ def calculate_score_from_landmarks(baseline, current):
     
     return score
 
-
+# 점수에 따라 피드백 주기
 def handle_posture_feedback(score, font, image, arduino):
     if score > 80:
         #cv2.putText(image, "Stage 2 Warning: Severe posture issue!", (20, 120), font, 0.8, (0, 0, 255), 2)
