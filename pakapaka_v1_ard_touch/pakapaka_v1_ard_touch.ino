@@ -27,10 +27,20 @@ void setDefaultPosition() {
   servoRight.write(servoRightDefault);
 }
 
+void nodDown45(){
+  servoLeft.write(servoLeftDefault+(servoLeftMax-servoLeftDefault)*0.25);
+  servoRight.write(servoRightDefault+(servoRightMax-servoRightDefault)*0.25);
+}
+
 // 고개 숙임 (90도)
 void nodDown90() {
   servoLeft.write((servoLeftDefault+servoLeftMax)/2);
   servoRight.write((servoRightDefault+servoRightMax)/2);
+}
+
+void nodDown135() {
+  servoLeft.write(servoLeftDefault+(servoLeftMax-servoLeftDefault)*0.75);
+  servoRight.write(servoRightDefault+(servoRightMax-servoRightDefault)*0.75);
 }
 
 
@@ -42,7 +52,7 @@ void nodDown180() {
 
 // 교정 알림: 흔들기 동작
 void shakeHead() {
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < 2; i++) {
     servoLeft.write(servoLeftDefault);
     servoRight.write(servoRightMax);
     delay(500);
@@ -51,7 +61,7 @@ void shakeHead() {
     delay(500);
   }
   nodDown180();
-  delay(8000);
+  delay(6000);
 }
 
 // 교정 완수 보상: 끄덕끄덕
@@ -65,7 +75,7 @@ void nodYes() {
     delay(300);
   }
   setDefaultPosition();
-  delay(8000);
+  delay(2000);
 }
 
 // touch쓰고 끄덕끄덕 모션
@@ -113,15 +123,14 @@ void loop() {
         shakeHead();           // 교정 알림
         break;
 
-      case '5':
-        setDefaultPosition();
-        delay(100);
-        nodYes();             // 교정 완수 보상 (끄덕끄덕)
+      case '5': // 45도
+        nodDown45();
         break;
-
-      case '6':
-        // 쓰다듬기 모션 (미구현)
+      
+      case '6': // 135도
+        nodDown135();
         break;
+      
 
       default:
         break;
