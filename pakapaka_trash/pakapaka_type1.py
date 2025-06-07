@@ -6,22 +6,15 @@ import time
 import pygame
 import serial.tools.list_ports
 import os
-import numpy as np
+import numpy as np  
 import mediapipe as mp
 import random
-import logging
-import traceback
+
 
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
 
-
-# 포트 자동감지, pyinstaller 혹은 안되면 필요 패키지 설치하도록 readme 추가
-
-# drawio seq1
 # ====================== 초기화 함수 ======================
-
-import serial.tools.list_ports
 
 music_files = [
     "sound/sound1.wav",
@@ -31,9 +24,9 @@ music_files = [
     "sound/sound5.wav",
     "sound/sound6.wav",
     "sound/sound7.wav"
-    ]    
+    ]   
 
-sound_on = False  # 초기 상태: Off
+sound_on = False
 
 def init_arduino(baudrate=9600):
     ports = serial.tools.list_ports.comports()
@@ -47,7 +40,6 @@ def init_arduino(baudrate=9600):
                 continue
     raise Exception("Arduino not found. Please check the connection.")
 
-
 def init_pose_landmarker(model_path):
     base_options = python.BaseOptions(model_asset_path=model_path)
     options = vision.PoseLandmarkerOptions(
@@ -59,7 +51,7 @@ def init_pose_landmarker(model_path):
         min_tracking_confidence=0.5,
     )
     return vision.PoseLandmarker.create_from_options(options)
-    
+
 def init_camera():
     cap = cv2.VideoCapture(0)
     cv2.namedWindow('Posture Detection', cv2.WINDOW_NORMAL)
@@ -71,6 +63,7 @@ def resource_path(relative_path):
     except AttributeError:
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
+
 # ====================== 기능 함수 ======================
 
 def get_landmark_positions(landmarks, image_width, image_height):
@@ -104,17 +97,15 @@ def get_landmark_positions(landmarks, image_width, image_height):
         'mouth_mid_z':mouth_mid_z
     }
 
-
 def draw_baseline_guidance(image, font):
     cv2.putText(image, "Please straighten your back and shoulders according to the reference posture and look at the screen. Press 'S' in keyboard.", (20, 60), font, 0.8, (0, 0, 255), 2)
     center_x, center_y = image.shape[1] // 2 + 50, image.shape[0] // 2
     axes_length = (200, 300)
     cv2.ellipse(image, (center_x, center_y), axes_length, 0, 0, 360, (0, 255, 255), 2)
 
-
 def calculate_score_from_landmarks(baseline, current):
-    distance_thresh1= 100
-    distance_thresh2 = 0.7
+    distance_thresh1= 120
+    distance_thresh2 = 0.48
     baseline_mouth_y = baseline['mouth_y']
     baseline_shoulder_y = baseline['shoulder_mid_y']
     baseline_mouth_z=baseline['mouth_mid_z']
@@ -137,41 +128,30 @@ def calculate_score_from_landmarks(baseline, current):
 
     return min(score_result,100)
 
-
 def handle_posture_feedback(score, font, image, arduino):
-    if score > 95:
-        #cv2.putText(image, "Stage 2 Warning: Severe posture issue!", (20, 120), font, 0.8, (0, 0, 255), 2)
-        arduino.write(b'4')
-        # print("serial 4 sent means phase 5 and shake\n")
+    if score >= 80:
+        arduino.write(b'2')
+        print("serial 2 sent means phase 4\n")
         if sound_on and not pygame.mixer.music.get_busy():
-                    pygame.mixer.music.load(resource_path("sound/sound_shake.wav"))
+                    pygame.mixer.music.load(resource_path("sound/alpacca_sound.wav"))
                     pygame.mixer.music.play()  
         return True
-        
-        # shakeHead() 모션임
-
-    elif score >= 70:
-        #cv2.putText(image, "Stage 1 W       arning: Please fix your posture!", (20, 120), font, 0.8, (0, 165, 255), 2)
-        arduino.write(b'6')
-       #  print("serial 6 sent means phase 4\n")
-        return False
-
-    elif score >= 40:
-        #cv2.putText(image, "Stage 1 Warning: Please fix your posture!", (20, 120), font, 0.8, (0, 165, 255), 2)
+    
+    elif score >= 60:
         arduino.write(b'1')
-       #  print("serial 1 sent means phase 3\n")
+        print("serial 1 sent means phase 3\n")
         return False
-
-    # elif score >= 25:
-    #     #cv2.putText(image, "Stage 1 Warning: Please fix your posture!", (20, 120), font, 0.8, (0, 165, 255), 2)
-    #     arduino.write(b'5')
-    #     print("serial 5 sent means phase 2\n")
-    #     return False
-
+    
+    elif score >= 30:
+        arduino.write(b'5')
+        print("serial 5 sent means phase 2\n")
+        return False
+    
     else:
         arduino.write(b'0')
-       #  print("serial 0 sent means phase 1\n")
+        print("serial 0 sent means phase 1\n")
         return False
+    
 
 def handle_stretch_session(arduino, sound_on):
     if sound_on and not pygame.mixer.music.get_busy():
@@ -209,30 +189,16 @@ def draw_landmarks_on_image(rgb_image, detection_result):
 
     return annotated_image
 
-# ====================== 로그 초기화 ======================
-# log_filename = f"pakapaka_log_{time.strftime('%Y%m%d_%H%M%S')}.txt"
-
-# logging.basicConfig(
-#     level=logging.DEBUG,
-#     format="%(asctime)s [%(levelname)s] %(message)s",
-#     handlers=[
-#         logging.FileHandler(log_filename, encoding='utf-8')
-#     ]
-# )
-
-# def log_exception(e):
-#     import traceback
-#     logging.error("예외 발생:\n" + traceback.format_exc())
-
-
 # ====================== 메인 ======================
 
 def main():
+    model_path = resource_path("pose_landmarker_lite.task")
+    print("📌 모델 경로:", model_path)
+
     pygame.init()
     pygame.mixer.init()
     global sound_on
-        
-    model_path = resource_path("pose_landmarker_lite.task")
+
     pose_landmarker = init_pose_landmarker(model_path)
     arduino = init_arduino()
     cap = init_camera()
@@ -242,6 +208,7 @@ def main():
     measured = False
     last_score_time = 0
     score = 0
+    last_arduino_check = 0  # 아두이노 체크 시간 추적
 
     while cap.isOpened():
         try:
@@ -265,7 +232,7 @@ def main():
                         print(f" - fileno() 호출 중 오류: {fe}")
         except Exception as outer_e:
             print(f"[Unexpected Error] {outer_e}")
-    
+   
 
 
         success, image = cap.read()
@@ -296,7 +263,7 @@ def main():
                     measured = True
             else:
                 current_time = time.time()
-                cv2.putText(image, "''R' to reset baseline, 'P' to turn on/off the sound", (20, 110), font, 0.8, (200, 200, 200), 1)
+                cv2.putText(image, "'R' to reset baseline, 'P' to turn on/off the sound", (20, 110), font, 0.8, (200, 200, 200), 1)
                 cv2.putText(image, f'Turtle Neck Score: {score:.1f}/100', (20, 80), font, 0.8, (0, 100, 255), 2)
                 cv2.putText(
                     image,
@@ -318,11 +285,10 @@ def main():
                             pygame.mixer.music.play()
 
                     cv2.putText(image, f'Turtle Neck Score: {score:.1f}/100', (20, 80), font, 0.8, (0, 100, 255), 2)
-                    if(handle_posture_feedback(score, font, image, arduino)):
-                        last_score_time=current_time+4.0
+                    if (handle_posture_feedback(score, font, image, arduino)):
+                        last_score_time=current_time+3
                     else:
-                        last_score_time=current_time+2.0
-                    
+                        last_score_time=current_time
 
         cv2.imshow('Pakapaka', image)
 
@@ -336,7 +302,6 @@ def main():
             print(f"{'🔊 Sound ON' if sound_on else '🔇 Sound OFF'}")
 
         if key == 27:
-            arduino.write(b'0')
             break
 
     cap.release()
@@ -346,8 +311,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    # try:
-    #     main()
-    # except Exception as e:
-    #     log_exception(e)
-    #     print("예외가 발생하여 로그에 기록되었습니다.")

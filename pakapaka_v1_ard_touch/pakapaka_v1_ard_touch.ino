@@ -1,9 +1,9 @@
 #include <Servo.h>
 
-const int servoLeftDefault=180;
-const int servoRightDefault=0;
-const int servoLeftMax=90;
-const int servoRightMax=120;
+const int servoLeftDefault=165;
+const int servoRightDefault=25;
+const int servoLeftMax=55;
+const int servoRightMax=140;
 const int touchPin=4;
 
 
@@ -61,7 +61,7 @@ void shakeHead() {
     delay(500);
   }
   nodDown180();
-  delay(6000);
+  delay(3000);
 }
 
 // 교정 완수 보상: 끄덕끄덕
@@ -90,12 +90,15 @@ void touched(){
 void loop() {
 
   int currentState=digitalRead(touchPin);
-  if (currentState==HIGH){
-    touched();
-    // 이게 불려지는 순간 사실 touched에서 nodYes가 불려지면서 딜레이가 꽤 길어짐, 따라서 그동안은 아두이노 코드 진행 x
-    return;
-  }
 
+  if (currentState == HIGH) {
+    delay(100);  // 50ms 기다린 후
+    if (digitalRead(touchPin) == HIGH) {
+      touched();  // 진짜 터치라고 판단
+      return;
+    }
+  }
+  
   if (Serial.available()) {
     input = Serial.read();
   

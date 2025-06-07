@@ -9,6 +9,8 @@ import os
 import numpy as np
 import mediapipe as mp
 import random
+import logging
+import traceback
 
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -79,6 +81,7 @@ def get_landmark_positions(landmarks, image_width, image_height):
     mouth_right = landmarks[10]
     mouth_mid_x = (mouth_left.x + mouth_right.x) / 2
     mouth_mid_y = (mouth_left.y + mouth_right.y) / 2
+    mouth_mid_z=(mouth_left.z+mouth_right.z)/2
 
     # 어깨 감지 가능한 경우
     try:
@@ -97,7 +100,8 @@ def get_landmark_positions(landmarks, image_width, image_height):
         'shoulder_mid': shoulder_mid,
         'mouth_mid': (int(mouth_mid_x * image_width), int(mouth_mid_y * image_height)),
         'mouth_y': int(mouth_mid_y * image_height),
-        'shoulder_mid_y': shoulder_mid_y_px
+        'shoulder_mid_y': shoulder_mid_y_px,
+        'mouth_mid_z':mouth_mid_z
     }
 
 
@@ -109,50 +113,64 @@ def draw_baseline_guidance(image, font):
 
 
 def calculate_score_from_landmarks(baseline, current):
-    distance_thresh = 120
+    distance_thresh1= 95
+    distance_thresh2 = 0.33
     baseline_mouth_y = baseline['mouth_y']
     baseline_shoulder_y = baseline['shoulder_mid_y']
+    baseline_mouth_z=baseline['mouth_mid_z']
     current_mouth_y = current['mouth_y']
     current_shoulder_y = current['shoulder_mid_y']
+    current_mouth_z=current['mouth_mid_z']
     baseline_distance = abs(baseline_mouth_y - baseline_shoulder_y)
     current_distance = abs(current_mouth_y - current_shoulder_y)
-    distance_diff = baseline_distance - current_distance
-    score = min(max((distance_diff / distance_thresh) * 100, 0), 100)
-    return score
+    distance_diff1 = baseline_distance - current_distance
+    distance_diff2=(baseline_mouth_z-current_mouth_z)
+    # score = min(max((distance_diff / distance_thresh) * 100, 0), 100)
+    score1 = min(max((distance_diff1 / distance_thresh1) * 100, 0), 200)
+    score2 = min(max((distance_diff2 / distance_thresh2) * 100, 0), 200)
+
+    score_result = (score1+score2)/2
+    if score1>score2 :
+        print(f"위아래: {score1}\n")
+    else :
+        print(f"앞뒤: {score2}\n")
+
+    return min(score_result,100)
 
 
 def handle_posture_feedback(score, font, image, arduino):
-    if score > 90:
+    if score > 95:
         #cv2.putText(image, "Stage 2 Warning: Severe posture issue!", (20, 120), font, 0.8, (0, 0, 255), 2)
         arduino.write(b'4')
-        print("serial 4 sent means phase 5 and shake\n")
+        # print("serial 4 sent means phase 5 and shake\n")
         if sound_on and not pygame.mixer.music.get_busy():
                     pygame.mixer.music.load(resource_path("sound/sound_shake.wav"))
                     pygame.mixer.music.play()  
         return True
         
         # shakeHead() 모션임
-    elif score >= 75:
-        #cv2.putText(image, "Stage 1 Warning: Please fix your posture!", (20, 120), font, 0.8, (0, 165, 255), 2)
+
+    elif score >= 70:
+        #cv2.putText(image, "Stage 1 W       arning: Please fix your posture!", (20, 120), font, 0.8, (0, 165, 255), 2)
         arduino.write(b'6')
-        print("serial 6 sent means phase 4\n")
+       #  print("serial 6 sent means phase 4\n")
         return False
 
-    elif score >= 50:
+    elif score >= 40:
         #cv2.putText(image, "Stage 1 Warning: Please fix your posture!", (20, 120), font, 0.8, (0, 165, 255), 2)
         arduino.write(b'1')
-        print("serial 1 sent means phase 3\n")
+       #  print("serial 1 sent means phase 3\n")
         return False
 
-    elif score >= 25:
-        #cv2.putText(image, "Stage 1 Warning: Please fix your posture!", (20, 120), font, 0.8, (0, 165, 255), 2)
-        arduino.write(b'5')
-        print("serial 5 sent means phase 2\n")
-        return False
+    # elif score >= 25:
+    #     #cv2.putText(image, "Stage 1 Warning: Please fix your posture!", (20, 120), font, 0.8, (0, 165, 255), 2)
+    #     arduino.write(b'5')
+    #     print("serial 5 sent means phase 2\n")
+    #     return False
 
     else:
         arduino.write(b'0')
-        print("serial 0 sent means phase 1\n")
+       #  print("serial 0 sent means phase 1\n")
         return False
 
 def handle_stretch_session(arduino, sound_on):
@@ -191,6 +209,21 @@ def draw_landmarks_on_image(rgb_image, detection_result):
 
     return annotated_image
 
+# ====================== 로그 초기화 ======================
+# log_filename = f"pakapaka_log_{time.strftime('%Y%m%d_%H%M%S')}.txt"
+
+# logging.basicConfig(
+#     level=logging.DEBUG,
+#     format="%(asctime)s [%(levelname)s] %(message)s",
+#     handlers=[
+#         logging.FileHandler(log_filename, encoding='utf-8')
+#     ]
+# )
+
+# def log_exception(e):
+#     import traceback
+#     logging.error("예외 발생:\n" + traceback.format_exc())
+
 
 # ====================== 메인 ======================
 
@@ -211,16 +244,28 @@ def main():
     score = 0
 
     while cap.isOpened():
-
-        #touch 됐으면 효과음 틀기 (touch는 딱 하나만 올 것임)
-        if arduino.in_waiting > 0:
-            line = arduino.readline().decode('utf-8').strip()
-            if line == "TOUCH":
-                print("🧤 TOUCH received from Arduino")
-                if sound_on and not pygame.mixer.music.get_busy():
-                    selected_music = resource_path(random.choice(music_files))
-                    pygame.mixer.music.load(selected_music)
-                    pygame.mixer.music.play()       
+        try:
+            if arduino and arduino.is_open:
+                try:
+                    if arduino.in_waiting > 0:
+                        line = arduino.readline().decode('utf-8').strip()
+                        if line == "TOUCH":
+                            print("🧤 TOUCH received from Arduino")
+                            if sound_on and not pygame.mixer.music.get_busy():
+                                selected_music = resource_path(random.choice(music_files))
+                                pygame.mixer.music.load(selected_music)
+                                pygame.mixer.music.play()
+                except OSError as e:
+                    print(f"[Serial Error] {e}")
+                    print(f" - arduino.is_open: {arduino.is_open}")
+                    print(f" - arduino.port: {arduino.port}")
+                    try:
+                        print(f" - arduino.fileno(): {arduino.fileno()}")
+                    except Exception as fe:
+                        print(f" - fileno() 호출 중 오류: {fe}")
+        except Exception as outer_e:
+            print(f"[Unexpected Error] {outer_e}")
+    
 
 
         success, image = cap.read()
@@ -263,7 +308,7 @@ def main():
                     2
                 )
 
-                if current_time - last_score_time >= 3.0:
+                if current_time - last_score_time >= 1.0:
                     prev_score = score
                     score = calculate_score_from_landmarks(baseline_landmarks, landmarks)
 
@@ -274,9 +319,9 @@ def main():
 
                     cv2.putText(image, f'Turtle Neck Score: {score:.1f}/100', (20, 80), font, 0.8, (0, 100, 255), 2)
                     if(handle_posture_feedback(score, font, image, arduino)):
-                        last_score_time=current_time+4.5
+                        last_score_time=current_time+4.0
                     else:
-                        last_score_time=current_time
+                        last_score_time=current_time+2.0
                     
 
         cv2.imshow('Pakapaka', image)
@@ -291,6 +336,7 @@ def main():
             print(f"{'🔊 Sound ON' if sound_on else '🔇 Sound OFF'}")
 
         if key == 27:
+            arduino.write(b'0')
             break
 
     cap.release()
@@ -300,3 +346,8 @@ def main():
 
 if __name__ == "__main__":
     main()
+    # try:
+    #     main()
+    # except Exception as e:
+    #     log_exception(e)
+    #     print("예외가 발생하여 로그에 기록되었습니다.")
